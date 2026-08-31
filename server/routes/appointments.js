@@ -391,5 +391,192 @@ router.patch(
     }
   }
 );
+router.patch(
+  "/:id/confirm",
+  authenticateToken,
+  requireRole("PROVIDER"),
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
 
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      const provider = await prisma.provider.findUnique({
+        where: {
+          userId: req.user.id,
+        },
+      });
+
+      if (!provider) {
+        return res.status(404).json({
+          message: "Provider profile not found",
+        });
+      }
+
+      const appointment = await prisma.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          providerId: provider.id,
+        },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      if (appointment.status !== "REQUESTED") {
+        return res.status(400).json({
+          message: "Only requested appointments can be confirmed",
+        });
+      }
+
+      const updatedAppointment = await prisma.appointment.update({
+        where: {
+          id: appointment.id,
+        },
+        data: {
+          status: "CONFIRMED",
+        },
+      });
+
+      return res.json({
+        message: "Appointment confirmed",
+        appointment: updatedAppointment,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
+router.patch(
+  "/:id/check-in",
+  authenticateToken,
+  requireRole("FRONT_DESK"),
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      const appointment = await prisma.appointment.findUnique({
+        where: {
+          id: appointmentId,
+        },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      if (appointment.status !== "CONFIRMED") {
+        return res.status(400).json({
+          message: "Only confirmed appointments can be checked in",
+        });
+      }
+
+      const updatedAppointment = await prisma.appointment.update({
+        where: {
+          id: appointment.id,
+        },
+        data: {
+          status: "CHECKED_IN",
+        },
+      });
+
+      return res.json({
+        message: "Patient checked in",
+        appointment: updatedAppointment,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
+router.patch(
+  "/:id/complete",
+  authenticateToken,
+  requireRole("PROVIDER"),
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      const provider = await prisma.provider.findUnique({
+        where: {
+          userId: req.user.id,
+        },
+      });
+
+      if (!provider) {
+        return res.status(404).json({
+          message: "Provider profile not found",
+        });
+      }
+
+      const appointment = await prisma.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          providerId: provider.id,
+        },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      if (appointment.status !== "CHECKED_IN") {
+        return res.status(400).json({
+          message: "Only checked-in appointments can be completed",
+        });
+      }
+
+      const updatedAppointment = await prisma.appointment.update({
+        where: {
+          id: appointment.id,
+        },
+        data: {
+          status: "COMPLETED",
+        },
+      });
+
+      return res.json({
+        message: "Appointment completed",
+        appointment: updatedAppointment,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
 module.exports = router;
