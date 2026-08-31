@@ -39,6 +39,7 @@ model Provider {
 
   user         User          @relation(fields: [userId], references: [id])
   appointments Appointment[]
+  visitNotes VisitNote[]
 }
 
 model Patient {
@@ -65,4 +66,16 @@ model Appointment {
 
   provider Provider @relation(fields: [providerId], references: [id])
   patient  Patient? @relation(fields: [patientId], references: [id])
+  visitNotes VisitNote[]
+}
+model VisitNote {
+  id            Int      @id @default(autoincrement())
+  appointmentId Int
+  providerId    Int
+  content       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  provider    Provider    @relation(fields: [providerId], references: [id])
 }
