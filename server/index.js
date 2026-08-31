@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const appointmentsRouter = require("./routes/appointments");
 
 const authRouter = require("./routes/auth");
 
@@ -16,6 +17,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/appointments", appointmentsRouter);
 
 const PORT = process.env.PORT || 5001;
 

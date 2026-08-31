@@ -11,6 +11,14 @@ enum Role {
   PROVIDER
 }
 
+enum AppointmentStatus {
+  AVAILABLE
+  REQUESTED
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
@@ -19,7 +27,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  provider     Provider?
+  provider Provider?
 }
 
 model Provider {
@@ -29,5 +37,32 @@ model Provider {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User @relation(fields: [userId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  appointments Appointment[]
+}
+
+model Patient {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+}
+
+model Appointment {
+  id         Int               @id @default(autoincrement())
+  providerId Int
+  patientId  Int?
+  startTime  DateTime
+  duration   Int
+  status     AppointmentStatus @default(AVAILABLE)
+  archived   Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id])
+  patient  Patient? @relation(fields: [patientId], references: [id])
 }
