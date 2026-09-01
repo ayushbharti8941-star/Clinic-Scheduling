@@ -17,6 +17,7 @@ enum AppointmentStatus {
   CONFIRMED
   CHECKED_IN
   COMPLETED
+  NO_SHOW
 }
 
 model User {

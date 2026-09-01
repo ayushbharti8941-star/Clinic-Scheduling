@@ -29,13 +29,13 @@ router.post(
     try {
       const { startTime, duration } = req.body;
 
-      if (!startTime || !duration) {
+      if (!startTime || duration === undefined) {
         return res.status(400).json({
           message: "startTime and duration are required",
         });
       }
 
-      if (duration <= 0) {
+      if (Number(duration) <= 0) {
         return res.status(400).json({
           message: "Duration must be greater than 0",
         });
@@ -141,6 +141,7 @@ router.get(
       } = req.query;
 
       const currentPage = Math.max(Number(page) || 1, 1);
+
       const currentPageSize = Math.min(
         Math.max(Number(pageSize) || 10, 1),
         100
@@ -190,16 +191,21 @@ router.get(
         where.startTime = {};
 
         if (from) {
-          where.startTime.gte = new Date(`${from}T00:00:00.000Z`);
+          where.startTime.gte = new Date(
+            `${from}T00:00:00.000Z`
+          );
         }
 
         if (to) {
-          where.startTime.lt = new Date(
+          const endDate = new Date(
             `${to}T00:00:00.000Z`
           );
-          where.startTime.lt.setUTCDate(
-            where.startTime.lt.getUTCDate() + 1
+
+          endDate.setUTCDate(
+            endDate.getUTCDate() + 1
           );
+
+          where.startTime.lt = endDate;
         }
       }
 
@@ -240,7 +246,9 @@ router.get(
         total,
         page: currentPage,
         pageSize: currentPageSize,
-        totalPages: Math.ceil(total / currentPageSize),
+        totalPages: Math.ceil(
+          total / currentPageSize
+        ),
       });
     } catch (error) {
       console.error(error);
@@ -285,13 +293,14 @@ router.get(
               ],
             };
 
-      const appointments = await prisma.appointment.findMany({
-        where,
-        include: appointmentInclude,
-        orderBy: {
-          startTime: "asc",
-        },
-      });
+      const appointments =
+        await prisma.appointment.findMany({
+          where,
+          include: appointmentInclude,
+          orderBy: {
+            startTime: "asc",
+          },
+        });
 
       return res.json({
         appointments,
@@ -390,7 +399,6 @@ router.post(
         });
       }
 
-      // Validate every weekly block.
       for (const slot of weeklySlots) {
         const dayOfWeek = Number(slot.dayOfWeek);
         const duration = Number(slot.duration);
@@ -452,7 +460,6 @@ router.post(
       const created = [];
       const skipped = [];
 
-      // Generate every matching date in the range.
       for (
         let current = new Date(from);
         current <= to;
@@ -487,8 +494,6 @@ router.post(
               duration * 60 * 1000
           );
 
-          // Find existing active appointments/slots
-          // that could overlap this generated slot.
           const existingAppointments =
             await prisma.appointment.findMany({
               where: {
@@ -517,11 +522,13 @@ router.post(
 
           if (collision) {
             skipped.push({
-              startTime: startTime.toISOString(),
+              startTime:
+                startTime.toISOString(),
               duration,
               reason:
                 "Collides with an existing appointment or slot",
-              existingAppointmentId: collision.id,
+              existingAppointmentId:
+                collision.id,
             });
 
             continue;
@@ -540,10 +547,8 @@ router.post(
 
           created.push({
             id: appointment.id,
-            startTime:
-              appointment.startTime,
-            duration:
-              appointment.duration,
+            startTime: appointment.startTime,
+            duration: appointment.duration,
           });
         }
       }
@@ -780,9 +785,7 @@ router.get(
       }
 
       const provider =
-        await getProviderForUser(
-          req.user.id
-        );
+        await getProviderForUser(req.user.id);
 
       if (
         !canViewAppointment(
@@ -836,7 +839,7 @@ router.put(
         });
       }
 
-      if (!startTime && !duration) {
+      if (!startTime && duration === undefined) {
         return res.status(400).json({
           message:
             "Provide startTime or duration to update",
@@ -882,8 +885,7 @@ router.put(
       }
 
       if (
-        appointment.status !==
-          "AVAILABLE" ||
+        appointment.status !== "AVAILABLE" ||
         appointment.archived
       ) {
         return res.status(400).json({
@@ -972,8 +974,7 @@ router.post(
       }
 
       if (
-        appointment.status !==
-          "AVAILABLE" ||
+        appointment.status !== "AVAILABLE" ||
         appointment.archived
       ) {
         return res.status(400).json({
@@ -1003,9 +1004,7 @@ router.post(
           },
 
           data: {
-            patientId: Number(
-              patientId
-            ),
+            patientId: Number(patientId),
             status: "REQUESTED",
           },
         });
@@ -1250,10 +1249,7 @@ router.patch(
         });
       }
 
-      if (
-        appointment.status !==
-        "REQUESTED"
-      ) {
+      if (appointment.status !== "REQUESTED") {
         return res.status(400).json({
           message:
             "Only requested appointments can be confirmed",
@@ -1324,10 +1320,7 @@ router.patch(
         });
       }
 
-      if (
-        appointment.status !==
-        "CONFIRMED"
-      ) {
+      if (appointment.status !== "CONFIRMED") {
         return res.status(400).json({
           message:
             "Only confirmed appointments can be checked in",
@@ -1413,10 +1406,7 @@ router.patch(
         });
       }
 
-      if (
-        appointment.status !==
-        "CHECKED_IN"
-      ) {
+      if (appointment.status !== "CHECKED_IN") {
         return res.status(400).json({
           message:
             "Only checked-in appointments can be completed",
@@ -1453,6 +1443,87 @@ router.patch(
 
 
 // ============================================================
+// MARK NO SHOW
+// Goal 4: Only from CONFIRMED and only after scheduled time
+// ============================================================
+
+router.patch(
+  "/:id/no-show",
+  authenticateToken,
+  requireRole("FRONT_DESK"),
+  async (req, res) => {
+    try {
+      const appointmentId = Number(
+        req.params.id
+      );
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message:
+            "Invalid appointment ID",
+        });
+      }
+
+      const appointment =
+        await prisma.appointment.findUnique({
+          where: {
+            id: appointmentId,
+          },
+        });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message:
+            "Appointment not found",
+        });
+      }
+
+      if (appointment.status !== "CONFIRMED") {
+        return res.status(400).json({
+          message:
+            "Only confirmed appointments can be marked as no-show",
+        });
+      }
+
+      const now = new Date();
+
+      if (appointment.startTime > now) {
+        return res.status(400).json({
+          message:
+            "An appointment can only be marked no-show after its scheduled time has passed",
+        });
+      }
+
+      const updatedAppointment =
+        await prisma.appointment.update({
+          where: {
+            id: appointment.id,
+          },
+
+          data: {
+            status: "NO_SHOW",
+          },
+        });
+
+      return res.json({
+        message:
+          "Appointment marked as no-show",
+        appointment:
+          updatedAppointment,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message:
+          "Internal server error",
+      });
+    }
+  }
+);
+
+
+// ============================================================
 // ADD SUPPORTING PROVIDER
 // ============================================================
 
@@ -1465,8 +1536,7 @@ router.post(
         req.params.id
       );
 
-      const { providerId } =
-        req.body;
+      const { providerId } = req.body;
 
       if (Number.isNaN(appointmentId)) {
         return res.status(400).json({
@@ -1543,18 +1613,16 @@ router.post(
       }
 
       const existingSupport =
-        await prisma.appointmentSupport.findUnique(
-          {
-            where: {
-              appointmentId_providerId: {
-                appointmentId:
-                  appointment.id,
-                providerId:
-                  supportingProvider.id,
-              },
+        await prisma.appointmentSupport.findUnique({
+          where: {
+            appointmentId_providerId: {
+              appointmentId:
+                appointment.id,
+              providerId:
+                supportingProvider.id,
             },
-          }
-        );
+          },
+        });
 
       if (existingSupport) {
         return res.status(400).json({
@@ -1564,26 +1632,23 @@ router.post(
       }
 
       const support =
-        await prisma.appointmentSupport.create(
-          {
-            data: {
-              appointmentId:
-                appointment.id,
+        await prisma.appointmentSupport.create({
+          data: {
+            appointmentId:
+              appointment.id,
+            providerId:
+              supportingProvider.id,
+          },
 
-              providerId:
-                supportingProvider.id,
-            },
-
-            include: {
-              provider: {
-                select: {
-                  id: true,
-                  name: true,
-                },
+          include: {
+            provider: {
+              select: {
+                id: true,
+                name: true,
               },
             },
-          }
-        );
+          },
+        });
 
       return res.status(201).json({
         message:
@@ -1666,16 +1731,14 @@ router.delete(
       }
 
       const support =
-        await prisma.appointmentSupport.findUnique(
-          {
-            where: {
-              appointmentId_providerId: {
-                appointmentId,
-                providerId,
-              },
+        await prisma.appointmentSupport.findUnique({
+          where: {
+            appointmentId_providerId: {
+              appointmentId,
+              providerId,
             },
-          }
-        );
+          },
+        });
 
       if (!support) {
         return res.status(404).json({

@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import {
   api,
@@ -16,6 +17,10 @@ function formatWhen(value) {
     minute: "2-digit",
   });
 }
+
+// ============================================================
+// LOGIN
+// ============================================================
 
 function Login({ onLoggedIn }) {
   const [email, setEmail] = useState("frontdesk@clinic.com");
@@ -111,6 +116,10 @@ function Login({ onLoggedIn }) {
   );
 }
 
+// ============================================================
+// ROLE LABEL
+// ============================================================
+
 function roleLabel(appointment, userProviderId) {
   if (!userProviderId) {
     return "Clinic";
@@ -122,6 +131,229 @@ function roleLabel(appointment, userProviderId) {
 
   return "Supporting";
 }
+
+// ============================================================
+// GOAL 8 — DASHBOARD
+// ============================================================
+
+function Dashboard() {
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadDashboard() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await api("/api/dashboard");
+      setDashboard(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <section className="card">
+        <h2>Dashboard</h2>
+        <p>Loading dashboard…</p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="card">
+        <h2>Dashboard</h2>
+        <p className="error">{error}</p>
+
+        <button type="button" onClick={loadDashboard}>
+          Try again
+        </button>
+      </section>
+    );
+  }
+
+  if (!dashboard) {
+    return null;
+  }
+
+  const {
+    headline,
+    breakdown,
+    weeklyNoShowRate,
+  } = dashboard;
+
+  return (
+    <section className="card">
+      <div className="dashboard-header">
+        <div>
+          <p className="eyebrow">GOAL 8</p>
+          <h2>Clinic dashboard</h2>
+        </div>
+
+        <button type="button" onClick={loadDashboard}>
+          Refresh
+        </button>
+      </div>
+
+      {/* ======================================================
+          HEADLINE METRICS
+      ======================================================= */}
+
+      <div className="dashboard-grid">
+        <div className="dashboard-stat">
+          <span className="muted">Appointments today</span>
+          <strong>{headline.appointmentsToday}</strong>
+        </div>
+
+        <div className="dashboard-stat">
+          <span className="muted">Checked in now</span>
+          <strong>{headline.checkedInNow}</strong>
+        </div>
+
+        <div className="dashboard-stat">
+          <span className="muted">No-shows this week</span>
+          <strong>{headline.noShowsThisWeek}</strong>
+        </div>
+
+        <div className="dashboard-stat">
+          <span className="muted">Upcoming confirmed</span>
+          <strong>{headline.upcomingConfirmed}</strong>
+        </div>
+      </div>
+
+      {/* ======================================================
+          BREAKDOWN
+      ======================================================= */}
+
+      <div className="dashboard-sections">
+        <div>
+          <h3>Appointments by provider</h3>
+
+          {breakdown.byProvider.length === 0 ? (
+            <p className="muted">
+              No appointment data available.
+            </p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Appointments</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {breakdown.byProvider.map((item) => (
+                  <tr key={item.providerId}>
+                    <td>{item.provider}</td>
+                    <td>{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div>
+          <h3>Appointments by status</h3>
+
+          {breakdown.byStatus.length === 0 ? (
+            <p className="muted">
+              No status data available.
+            </p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Count</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {breakdown.byStatus.map((item) => (
+                  <tr key={item.status}>
+                    <td>
+                      {item.status.replaceAll("_", " ")}
+                    </td>
+
+                    <td>{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* ======================================================
+          NO-SHOW RATE
+      ======================================================= */}
+
+      <div>
+        <h3>Weekly no-show rate</h3>
+
+        {weeklyNoShowRate.length === 0 ? (
+          <p className="muted">
+            No historical appointment data available.
+          </p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>Total</th>
+                <th>No-shows</th>
+                <th>Rate</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {weeklyNoShowRate.map((week) => (
+                <tr key={week.weekStart}>
+                  <td>
+                    {new Date(
+                      week.weekStart
+                    ).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                    {" – "}
+                    {new Date(
+                      week.weekEnd
+                    ).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </td>
+
+                  <td>{week.total}</td>
+
+                  <td>{week.noShows}</td>
+
+                  <td>{week.rate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
+// APPOINTMENT DETAIL
+// ============================================================
 
 function AppointmentDetail({
   appointment,
@@ -307,6 +539,10 @@ function AppointmentDetail({
   );
 }
 
+// ============================================================
+// SCHEDULE
+// ============================================================
+
 function Schedule({ user, onLogout }) {
   const [appointments, setAppointments] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -368,12 +604,6 @@ function Schedule({ user, onLogout }) {
   // ============================================================
   // SCHEDULE LOADING
   // ============================================================
-
-  async function loadSchedule() {
-    const data = await api("/api/appointments/schedule");
-
-    setAppointments(data.appointments);
-  }
 
   async function loadDetail(id) {
     const data = await api(`/api/appointments/${id}`);
@@ -790,6 +1020,12 @@ function Schedule({ user, onLogout }) {
 
       {error ? <p className="error">{error}</p> : null}
 
+      {/* =====================================================
+          GOAL 8 — DASHBOARD
+      ====================================================== */}
+
+      {!selected ? <Dashboard /> : null}
+
       {selected ? (
         <AppointmentDetail
           appointment={selected}
@@ -1135,6 +1371,10 @@ function Schedule({ user, onLogout }) {
                     <option value="COMPLETED">
                       Completed
                     </option>
+
+                    <option value="NO_SHOW">
+                      No show
+                    </option>
                   </select>
                 </label>
               </div>
@@ -1348,6 +1588,10 @@ function Schedule({ user, onLogout }) {
   );
 }
 
+// ============================================================
+// APP
+// ============================================================
+
 function App() {
   const [user, setUser] = useState(getUser());
 
@@ -1367,3 +1611,4 @@ function App() {
 }
 
 export default App;
+
