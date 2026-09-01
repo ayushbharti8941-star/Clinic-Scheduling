@@ -50,9 +50,17 @@ router.post("/login", async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "1h",
+        expiresIn: "8h",
       }
     );
+
+    let provider = null;
+    if (user.role === "PROVIDER") {
+      provider = await prisma.provider.findUnique({
+        where: { userId: user.id },
+        select: { id: true, name: true },
+      });
+    }
 
     return res.json({
       message: "Login successful",
@@ -61,6 +69,8 @@ router.post("/login", async (req, res) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        providerId: provider?.id ?? null,
+        providerName: provider?.name ?? null,
       },
     });
   } catch (error) {

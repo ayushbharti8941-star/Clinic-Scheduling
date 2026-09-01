@@ -7,6 +7,13 @@ const {
   requireRole,
 } = require("../middleware/auth");
 
+const {
+  getProviderForUser,
+  canViewAppointment,
+  canManageCareTeam,
+  appointmentInclude,
+} = require("../lib/access");
+
 const router = express.Router();
 
 router.post(
@@ -98,6 +105,95 @@ router.get(
     }
   }
 );
+
+router.get("/schedule", authenticateToken, async (req, res) => {
+  try {
+    const provider = await getProviderForUser(req.user.id);
+
+    const where =
+      req.user.role === "FRONT_DESK"
+        ? { archived: false }
+        : {
+            archived: false,
+            OR: [
+              { providerId: provider?.id ?? -1 },
+              {
+                supportingProviders: {
+                  some: {
+                    providerId: provider?.id ?? -1,
+                  },
+                },
+              },
+            ],
+          };
+
+    const appointments = await prisma.appointment.findMany({
+      where,
+      include: appointmentInclude,
+      orderBy: {
+        startTime: "asc",
+      },
+    });
+
+    return res.json({ appointments });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+});
+
+router.get("/:id", authenticateToken, async (req, res) => {
+  try {
+    const appointmentId = Number(req.params.id);
+
+    if (Number.isNaN(appointmentId)) {
+      return res.status(400).json({
+        message: "Invalid appointment ID",
+      });
+    }
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        ...appointmentInclude,
+        visitNotes: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            provider: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        message: "Appointment not found",
+      });
+    }
+
+    const provider = await getProviderForUser(req.user.id);
+
+    if (!canViewAppointment(req.user, provider, appointment)) {
+      return res.status(403).json({
+        message: "You can only view appointments on your own schedule",
+      });
+    }
+
+    return res.json({ appointment });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+});
+
 router.put(
   "/:id",
   authenticateToken,
@@ -579,4 +675,171 @@ router.patch(
     }
   }
 );
+router.post(
+  "/:id/supporting-providers",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
+      const { providerId } = req.body;
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      if (!providerId) {
+        return res.status(400).json({
+          message: "providerId is required",
+        });
+      }
+
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: { supportingProviders: true },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      const actorProvider = await getProviderForUser(req.user.id);
+
+      if (!canManageCareTeam(req.user, actorProvider, appointment)) {
+        return res.status(403).json({
+          message:
+            "Only front-desk staff or the scheduling provider can add supporting providers",
+        });
+      }
+
+      const supportingProvider = await prisma.provider.findUnique({
+        where: { id: Number(providerId) },
+      });
+
+      if (!supportingProvider) {
+        return res.status(404).json({
+          message: "Provider not found",
+        });
+      }
+
+      if (appointment.providerId === supportingProvider.id) {
+        return res.status(400).json({
+          message:
+            "Scheduling provider cannot be added as a supporting provider",
+        });
+      }
+
+      const existingSupport = await prisma.appointmentSupport.findUnique({
+        where: {
+          appointmentId_providerId: {
+            appointmentId: appointment.id,
+            providerId: supportingProvider.id,
+          },
+        },
+      });
+
+      if (existingSupport) {
+        return res.status(400).json({
+          message: "Provider is already a supporting provider",
+        });
+      }
+
+      const support = await prisma.appointmentSupport.create({
+        data: {
+          appointmentId: appointment.id,
+          providerId: supportingProvider.id,
+        },
+        include: {
+          provider: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      return res.status(201).json({
+        message: "Supporting provider added",
+        support,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/:id/supporting-providers/:providerId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
+      const providerId = Number(req.params.providerId);
+
+      if (Number.isNaN(appointmentId) || Number.isNaN(providerId)) {
+        return res.status(400).json({
+          message: "Invalid appointment or provider ID",
+        });
+      }
+
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: { supportingProviders: true },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      const actorProvider = await getProviderForUser(req.user.id);
+
+      if (!canManageCareTeam(req.user, actorProvider, appointment)) {
+        return res.status(403).json({
+          message:
+            "Only front-desk staff or the scheduling provider can remove supporting providers",
+        });
+      }
+
+      const support = await prisma.appointmentSupport.findUnique({
+        where: {
+          appointmentId_providerId: {
+            appointmentId,
+            providerId,
+          },
+        },
+      });
+
+      if (!support) {
+        return res.status(404).json({
+          message: "Supporting provider is not on this appointment",
+        });
+      }
+
+      await prisma.appointmentSupport.delete({
+        where: { id: support.id },
+      });
+
+      return res.json({
+        message: "Supporting provider removed",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
 module.exports = router;
