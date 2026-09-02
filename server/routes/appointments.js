@@ -91,6 +91,7 @@ router.get(
           status: "AVAILABLE",
           archived: false,
         },
+
         include: {
           provider: {
             select: {
@@ -99,6 +100,7 @@ router.get(
             },
           },
         },
+
         orderBy: {
           startTime: "asc",
         },
@@ -1037,6 +1039,7 @@ router.put(
 
 // ============================================================
 // REQUEST APPOINTMENT
+// Goal 10 — CREATE UNCONFIRMED ALERT
 // ============================================================
 
 router.post(
@@ -1105,6 +1108,7 @@ router.post(
 
       const result =
         await prisma.$transaction(async (tx) => {
+          // Change appointment to REQUESTED
           const updatedAppointment =
             await tx.appointment.update({
               where: {
@@ -1117,6 +1121,7 @@ router.post(
               },
             });
 
+          // Goal 9 — record status change
           await tx.appointmentHistory.create({
             data: {
               appointmentId,
@@ -1124,6 +1129,13 @@ router.post(
               type: "STATUS_CHANGE",
               oldStatus: appointment.status,
               newStatus: "REQUESTED",
+            },
+          });
+
+          // Goal 10 — create alert
+          await tx.appointmentAlert.create({
+            data: {
+              appointmentId: appointment.id,
             },
           });
 
@@ -1142,7 +1154,7 @@ router.post(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1228,7 +1240,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1314,7 +1326,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1416,7 +1428,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1503,7 +1515,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1605,7 +1617,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1701,7 +1713,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -1839,7 +1851,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -2001,7 +2013,7 @@ router.post(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );
@@ -2118,7 +2130,7 @@ router.delete(
       return res.status(500).json({
         message:
           "Internal server error",
-        });
+      });
     }
   }
 );

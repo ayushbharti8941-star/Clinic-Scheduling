@@ -52,8 +52,6 @@ model Provider {
   appointments           Appointment[]
   supportingAppointments AppointmentSupport[]
   visitNotes             VisitNote[]
-
-  historyEvents AppointmentHistory[] @relation("HistoryProvider")
 }
 
 model Patient {
@@ -83,6 +81,7 @@ model Appointment {
   visitNotes          VisitNote[]
   supportingProviders AppointmentSupport[]
   historyEvents       AppointmentHistory[]
+  alert               AppointmentAlert?
 }
 
 model AppointmentSupport {
@@ -107,8 +106,6 @@ model VisitNote {
 
   appointment Appointment @relation(fields: [appointmentId], references: [id])
   provider    Provider    @relation(fields: [providerId], references: [id])
-
-  historyEvents AppointmentHistory[] @relation("HistoryVisitNote")
 }
 
 model AppointmentHistory {
@@ -126,8 +123,21 @@ model AppointmentHistory {
   appointment Appointment @relation(fields: [appointmentId], references: [id])
   actor       User        @relation(fields: [actorUserId], references: [id])
 
-  provider  Provider?  @relation("HistoryProvider", fields: [providerId], references: [id])
-  visitNote VisitNote? @relation("HistoryVisitNote", fields: [visitNoteId], references: [id])
-
   @@index([appointmentId, createdAt])
+}
+
+// ============================================================
+// GOAL 10 — UNCONFIRMED APPOINTMENT ALERTS
+// ============================================================
+
+model AppointmentAlert {
+  id            Int       @id @default(autoincrement())
+  appointmentId Int       @unique
+  dismissedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([dismissedAt])
 }
