@@ -9,6 +9,12 @@ const {
 
 const router = express.Router();
 
+
+// ============================================================
+// CREATE VISIT NOTE
+// Goal 3 + Goal 9
+// ============================================================
+
 router.post(
   "/appointments/:id/notes",
   authenticateToken,
@@ -55,17 +61,32 @@ router.post(
         });
       }
 
-      const note = await prisma.visitNote.create({
-        data: {
-          appointmentId: appointment.id,
-          providerId: provider.id,
-          content: content.trim(),
-        },
+      // Create the visit note and its history entry
+      // in one transaction so they cannot get out of sync.
+      const result = await prisma.$transaction(async (tx) => {
+        const note = await tx.visitNote.create({
+          data: {
+            appointmentId: appointment.id,
+            providerId: provider.id,
+            content: content.trim(),
+          },
+        });
+
+        await tx.appointmentHistory.create({
+          data: {
+            appointmentId: appointment.id,
+            actorUserId: req.user.id,
+            type: "VISIT_NOTE_ADDED",
+            visitNoteId: note.id,
+          },
+        });
+
+        return note;
       });
 
       return res.status(201).json({
         message: "Visit note created",
-        note,
+        note: result,
       });
     } catch (error) {
       console.error(error);
@@ -76,6 +97,12 @@ router.post(
     }
   }
 );
+
+
+// ============================================================
+// GET VISIT NOTES
+// ============================================================
+
 router.get(
   "/appointments/:id/notes",
   authenticateToken,
@@ -105,9 +132,11 @@ router.get(
         where: {
           appointmentId,
         },
+
         orderBy: {
           createdAt: "asc",
         },
+
         include: {
           provider: {
             select: {
@@ -131,6 +160,17 @@ router.get(
     }
   }
 );
+
+
+// ============================================================
+// EDIT VISIT NOTE
+// Goal 3
+//
+// Important:
+// Editing a note does NOT edit or delete the history event.
+// The history remains immutable.
+// ============================================================
+
 router.put(
   "/notes/:id",
   authenticateToken,
@@ -186,6 +226,7 @@ router.put(
         where: {
           id: noteId,
         },
+
         data: {
           content: content.trim(),
         },
@@ -204,4 +245,6 @@ router.put(
     }
   }
 );
+
+
 module.exports = router;

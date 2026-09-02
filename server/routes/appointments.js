@@ -815,6 +815,112 @@ router.get(
 
 
 // ============================================================
+// GOAL 9 — APPOINTMENT HISTORY / TIMELINE
+// ============================================================
+
+router.get(
+  "/:id/history",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const appointmentId = Number(
+        req.params.id
+      );
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      const appointment =
+        await prisma.appointment.findUnique({
+          where: {
+            id: appointmentId,
+          },
+        });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      const provider =
+        await getProviderForUser(req.user.id);
+
+      if (
+        !canViewAppointment(
+          req.user,
+          provider,
+          appointment
+        )
+      ) {
+        return res.status(403).json({
+          message:
+            "You can only view history for appointments on your schedule",
+        });
+      }
+
+      const history =
+        await prisma.appointmentHistory.findMany({
+          where: {
+            appointmentId,
+          },
+
+          orderBy: {
+            createdAt: "asc",
+          },
+
+          include: {
+            actor: {
+              select: {
+                id: true,
+                email: true,
+                role: true,
+              },
+            },
+
+            provider: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+
+            visitNote: {
+              select: {
+                id: true,
+                content: true,
+                createdAt: true,
+
+                provider: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+      return res.json({
+        appointmentId,
+        history,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+  }
+);
+
+
+// ============================================================
 // EDIT AVAILABLE SLOT
 // ============================================================
 
@@ -997,23 +1103,38 @@ router.post(
         });
       }
 
-      const updatedAppointment =
-        await prisma.appointment.update({
-          where: {
-            id: appointmentId,
-          },
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointmentId,
+              },
 
-          data: {
-            patientId: Number(patientId),
-            status: "REQUESTED",
-          },
+              data: {
+                patientId: Number(patientId),
+                status: "REQUESTED",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId,
+              actorUserId: req.user.id,
+              type: "STATUS_CHANGE",
+              oldStatus: appointment.status,
+              newStatus: "REQUESTED",
+            },
+          });
+
+          return updatedAppointment;
         });
 
       return res.json({
         message:
           "Appointment requested",
         appointment:
-          updatedAppointment,
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1021,7 +1142,7 @@ router.post(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1107,7 +1228,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1193,7 +1314,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1201,6 +1322,7 @@ router.patch(
 
 // ============================================================
 // CONFIRM APPOINTMENT
+// Goal 9 — STATUS HISTORY
 // ============================================================
 
 router.patch(
@@ -1256,22 +1378,37 @@ router.patch(
         });
       }
 
-      const updatedAppointment =
-        await prisma.appointment.update({
-          where: {
-            id: appointment.id,
-          },
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointment.id,
+              },
 
-          data: {
-            status: "CONFIRMED",
-          },
+              data: {
+                status: "CONFIRMED",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type: "STATUS_CHANGE",
+              oldStatus: "REQUESTED",
+              newStatus: "CONFIRMED",
+            },
+          });
+
+          return updatedAppointment;
         });
 
       return res.json({
         message:
           "Appointment confirmed",
         appointment:
-          updatedAppointment,
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1279,7 +1416,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1287,6 +1424,7 @@ router.patch(
 
 // ============================================================
 // CHECK IN
+// Goal 9 — STATUS HISTORY
 // ============================================================
 
 router.patch(
@@ -1327,22 +1465,37 @@ router.patch(
         });
       }
 
-      const updatedAppointment =
-        await prisma.appointment.update({
-          where: {
-            id: appointment.id,
-          },
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointment.id,
+              },
 
-          data: {
-            status: "CHECKED_IN",
-          },
+              data: {
+                status: "CHECKED_IN",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type: "STATUS_CHANGE",
+              oldStatus: "CONFIRMED",
+              newStatus: "CHECKED_IN",
+            },
+          });
+
+          return updatedAppointment;
         });
 
       return res.json({
         message:
           "Patient checked in",
         appointment:
-          updatedAppointment,
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1350,7 +1503,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1358,6 +1511,7 @@ router.patch(
 
 // ============================================================
 // COMPLETE APPOINTMENT
+// Goal 9 — STATUS HISTORY
 // ============================================================
 
 router.patch(
@@ -1413,22 +1567,37 @@ router.patch(
         });
       }
 
-      const updatedAppointment =
-        await prisma.appointment.update({
-          where: {
-            id: appointment.id,
-          },
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointment.id,
+              },
 
-          data: {
-            status: "COMPLETED",
-          },
+              data: {
+                status: "COMPLETED",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type: "STATUS_CHANGE",
+              oldStatus: "CHECKED_IN",
+              newStatus: "COMPLETED",
+            },
+          });
+
+          return updatedAppointment;
         });
 
       return res.json({
         message:
           "Appointment completed",
         appointment:
-          updatedAppointment,
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1436,7 +1605,7 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1444,7 +1613,7 @@ router.patch(
 
 // ============================================================
 // MARK NO SHOW
-// Goal 4: Only from CONFIRMED and only after scheduled time
+// Goal 4 + Goal 9
 // ============================================================
 
 router.patch(
@@ -1494,22 +1663,37 @@ router.patch(
         });
       }
 
-      const updatedAppointment =
-        await prisma.appointment.update({
-          where: {
-            id: appointment.id,
-          },
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointment.id,
+              },
 
-          data: {
-            status: "NO_SHOW",
-          },
+              data: {
+                status: "NO_SHOW",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type: "STATUS_CHANGE",
+              oldStatus: "CONFIRMED",
+              newStatus: "NO_SHOW",
+            },
+          });
+
+          return updatedAppointment;
         });
 
       return res.json({
         message:
           "Appointment marked as no-show",
         appointment:
-          updatedAppointment,
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1517,7 +1701,145 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
+        });
+    }
+  }
+);
+
+
+// ============================================================
+// CANCEL APPOINTMENT
+// Goal 4 + Goal 9
+// ============================================================
+
+router.patch(
+  "/:id/cancel",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const appointmentId = Number(
+        req.params.id
+      );
+
+      const { reason } = req.body;
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message:
+            "Invalid appointment ID",
+        });
+      }
+
+      if (!reason || !reason.trim()) {
+        return res.status(400).json({
+          message:
+            "Cancellation reason is required",
+        });
+      }
+
+      const appointment =
+        await prisma.appointment.findUnique({
+          where: {
+            id: appointmentId,
+          },
+        });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message:
+            "Appointment not found",
+        });
+      }
+
+      if (
+        appointment.status === "CHECKED_IN" ||
+        appointment.status === "COMPLETED"
+      ) {
+        return res.status(400).json({
+          message:
+            "Appointments cannot be cancelled after check-in",
+        });
+      }
+
+      if (appointment.status === "CANCELLED") {
+        return res.status(400).json({
+          message:
+            "Appointment is already cancelled",
+        });
+      }
+
+      if (appointment.status === "NO_SHOW") {
+        return res.status(400).json({
+          message:
+            "A no-show appointment cannot be cancelled",
+        });
+      }
+
+      const actorProvider =
+        await getProviderForUser(req.user.id);
+
+      if (req.user.role === "PROVIDER") {
+        if (
+          !actorProvider ||
+          appointment.providerId !== actorProvider.id
+        ) {
+          return res.status(403).json({
+            message:
+              "Providers can only cancel appointments on their own schedule",
+          });
+        }
+      }
+
+      if (
+        req.user.role !== "FRONT_DESK" &&
+        req.user.role !== "PROVIDER"
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to cancel appointments",
+        });
+      }
+
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const updatedAppointment =
+            await tx.appointment.update({
+              where: {
+                id: appointment.id,
+              },
+
+              data: {
+                status: "CANCELLED",
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type: "CANCELLATION",
+              oldStatus: appointment.status,
+              newStatus: "CANCELLED",
+              reason: reason.trim(),
+            },
+          });
+
+          return updatedAppointment;
+        });
+
+      return res.json({
+        message:
+          "Appointment cancelled",
+        appointment:
+          result,
       });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message:
+          "Internal server error",
+        });
     }
   }
 );
@@ -1525,6 +1847,7 @@ router.patch(
 
 // ============================================================
 // ADD SUPPORTING PROVIDER
+// Goal 5 + Goal 9
 // ============================================================
 
 router.post(
@@ -1631,29 +1954,46 @@ router.post(
         });
       }
 
-      const support =
-        await prisma.appointmentSupport.create({
-          data: {
-            appointmentId:
-              appointment.id,
-            providerId:
-              supportingProvider.id,
-          },
-
-          include: {
-            provider: {
-              select: {
-                id: true,
-                name: true,
+      const result =
+        await prisma.$transaction(async (tx) => {
+          const support =
+            await tx.appointmentSupport.create({
+              data: {
+                appointmentId:
+                  appointment.id,
+                providerId:
+                  supportingProvider.id,
               },
+
+              include: {
+                provider: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId: appointment.id,
+              actorUserId: req.user.id,
+              type:
+                "SUPPORTING_PROVIDER_ADDED",
+              providerId:
+                supportingProvider.id,
             },
-          },
+          });
+
+          return support;
         });
 
       return res.status(201).json({
         message:
           "Supporting provider added",
-        support,
+        support:
+          result,
       });
     } catch (error) {
       console.error(error);
@@ -1661,7 +2001,7 @@ router.post(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );
@@ -1669,6 +2009,7 @@ router.post(
 
 // ============================================================
 // REMOVE SUPPORTING PROVIDER
+// Goal 5 + Goal 9
 // ============================================================
 
 router.delete(
@@ -1747,11 +2088,25 @@ router.delete(
         });
       }
 
-      await prisma.appointmentSupport.delete({
-        where: {
-          id: support.id,
-        },
-      });
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.appointmentSupport.delete({
+            where: {
+              id: support.id,
+            },
+          });
+
+          await tx.appointmentHistory.create({
+            data: {
+              appointmentId,
+              actorUserId: req.user.id,
+              type:
+                "SUPPORTING_PROVIDER_REMOVED",
+              providerId,
+            },
+          });
+        }
+      );
 
       return res.json({
         message:
@@ -1763,7 +2118,7 @@ router.delete(
       return res.status(500).json({
         message:
           "Internal server error",
-      });
+        });
     }
   }
 );

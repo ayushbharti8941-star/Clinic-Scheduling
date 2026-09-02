@@ -18,6 +18,15 @@ enum AppointmentStatus {
   CHECKED_IN
   COMPLETED
   NO_SHOW
+  CANCELLED
+}
+
+enum AppointmentHistoryType {
+  STATUS_CHANGE
+  SUPPORTING_PROVIDER_ADDED
+  SUPPORTING_PROVIDER_REMOVED
+  CANCELLATION
+  VISIT_NOTE_ADDED
 }
 
 model User {
@@ -28,7 +37,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  provider Provider?
+  provider      Provider?
+  historyEvents AppointmentHistory[]
 }
 
 model Provider {
@@ -42,6 +52,8 @@ model Provider {
   appointments           Appointment[]
   supportingAppointments AppointmentSupport[]
   visitNotes             VisitNote[]
+
+  historyEvents AppointmentHistory[] @relation("HistoryProvider")
 }
 
 model Patient {
@@ -70,19 +82,21 @@ model Appointment {
   patient             Patient?             @relation(fields: [patientId], references: [id])
   visitNotes          VisitNote[]
   supportingProviders AppointmentSupport[]
+  historyEvents       AppointmentHistory[]
 }
 
 model AppointmentSupport {
-  id            Int         @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   appointmentId Int
   providerId    Int
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime @default(now())
 
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  provider   Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  provider    Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([appointmentId, providerId])
 }
+
 model VisitNote {
   id            Int      @id @default(autoincrement())
   appointmentId Int
@@ -93,4 +107,27 @@ model VisitNote {
 
   appointment Appointment @relation(fields: [appointmentId], references: [id])
   provider    Provider    @relation(fields: [providerId], references: [id])
+
+  historyEvents AppointmentHistory[] @relation("HistoryVisitNote")
+}
+
+model AppointmentHistory {
+  id            Int                    @id @default(autoincrement())
+  appointmentId Int
+  actorUserId   Int
+  type          AppointmentHistoryType
+  oldStatus     AppointmentStatus?
+  newStatus     AppointmentStatus?
+  providerId    Int?
+  visitNoteId   Int?
+  reason        String?
+  createdAt     DateTime               @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  actor       User        @relation(fields: [actorUserId], references: [id])
+
+  provider  Provider?  @relation("HistoryProvider", fields: [providerId], references: [id])
+  visitNote VisitNote? @relation("HistoryVisitNote", fields: [visitNoteId], references: [id])
+
+  @@index([appointmentId, createdAt])
 }
