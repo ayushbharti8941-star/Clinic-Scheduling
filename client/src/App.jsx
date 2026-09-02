@@ -19,6 +19,18 @@ function formatWhen(value) {
   });
 }
 
+function StatusBadge({ status }) {
+  return (
+    <span className={`status-badge status-${status.toLowerCase()}`}>
+      {status.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+function initialsFromEmail(email) {
+  return (email || "?").slice(0, 2).toUpperCase();
+}
+
 // ============================================================
 // LOGIN
 // ============================================================
@@ -52,12 +64,13 @@ function Login({ onLoggedIn }) {
   return (
     <main className="login-page">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <p className="eyebrow">BUSY Infotech take-home</p>
+        <div className="brand-mark" aria-hidden="true" />
+        <p className="eyebrow">Clinic operations</p>
 
-        <h1>Clinic scheduling</h1>
+        <h1>Sign in to Clinic Schedule</h1>
 
         <p className="muted">
-          Sign in as front desk or a provider. Demo password is{" "}
+          Use a front-desk or provider account. Demo password is{" "}
           <code>password123</code>.
         </p>
 
@@ -83,14 +96,14 @@ function Login({ onLoggedIn }) {
           />
         </label>
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? "Signing in…" : "Sign in"}
         </button>
 
         <div className="demo-accounts">
           <button
             type="button"
-            className="linkish"
+            className="chip"
             onClick={() => setEmail("frontdesk@clinic.com")}
           >
             Front desk
@@ -98,7 +111,7 @@ function Login({ onLoggedIn }) {
 
           <button
             type="button"
-            className="linkish"
+            className="chip"
             onClick={() => setEmail("provider@clinic.com")}
           >
             Dr. Priya
@@ -106,7 +119,7 @@ function Login({ onLoggedIn }) {
 
           <button
             type="button"
-            className="linkish"
+            className="chip"
             onClick={() => setEmail("provider2@clinic.com")}
           >
             Dr. Arjun
@@ -163,8 +176,8 @@ function Dashboard() {
   if (loading) {
     return (
       <section className="card">
-        <h2>Dashboard</h2>
-        <p>Loading dashboard…</p>
+        <h2>Clinic dashboard</h2>
+        <p className="muted">Loading dashboard…</p>
       </section>
     );
   }
@@ -172,10 +185,10 @@ function Dashboard() {
   if (error) {
     return (
       <section className="card">
-        <h2>Dashboard</h2>
+        <h2>Clinic dashboard</h2>
         <p className="error">{error}</p>
 
-        <button type="button" onClick={loadDashboard}>
+        <button type="button" className="btn btn-primary" onClick={loadDashboard}>
           Try again
         </button>
       </section>
@@ -196,11 +209,15 @@ function Dashboard() {
     <section className="card">
       <div className="dashboard-header">
         <div>
-          <p className="eyebrow">GOAL 8</p>
+          <p className="eyebrow">Operations</p>
           <h2>Clinic dashboard</h2>
         </div>
 
-        <button type="button" onClick={loadDashboard}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={loadDashboard}
+        >
           Refresh
         </button>
       </div>
@@ -236,7 +253,7 @@ function Dashboard() {
       ======================================================= */}
 
       <div className="dashboard-sections">
-        <div>
+        <div className="panel">
           <h3>Appointments by provider</h3>
 
           {breakdown.byProvider.length === 0 ? (
@@ -264,7 +281,7 @@ function Dashboard() {
           )}
         </div>
 
-        <div>
+        <div className="panel">
           <h3>Appointments by status</h3>
 
           {breakdown.byStatus.length === 0 ? (
@@ -284,7 +301,7 @@ function Dashboard() {
                 {breakdown.byStatus.map((item) => (
                   <tr key={item.status}>
                     <td>
-                      {item.status.replaceAll("_", " ")}
+                      <StatusBadge status={item.status} />
                     </td>
 
                     <td>{item.count}</td>
@@ -300,7 +317,7 @@ function Dashboard() {
           NO-SHOW RATE
       ======================================================= */}
 
-      <div>
+      <div className="panel">
         <h3>Weekly no-show rate</h3>
 
         {weeklyNoShowRate.length === 0 ? (
@@ -444,7 +461,7 @@ function AppointmentDetail({
       <p className="muted">
         {formatWhen(appointment.startTime)} ·{" "}
         {appointment.duration} min ·{" "}
-        {appointment.status.replaceAll("_", " ")}
+        <StatusBadge status={appointment.status} />
       </p>
 
       <p>
@@ -509,7 +526,7 @@ function AppointmentDetail({
             ))}
           </select>
 
-          <button type="submit" disabled={saving}>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? "Adding…" : "Add"}
           </button>
         </form>
@@ -1000,20 +1017,29 @@ function Schedule({ user, onLogout }) {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Clinic schedule</p>
-
-          <h1>Care team view</h1>
+        <div className="brand">
+          <span className="brand-mark brand-mark-sm" aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Clinic schedule</p>
+            <h1>Care team</h1>
+          </div>
         </div>
 
         <div className="user-chip">
-          <span>
-            {user.email} ·{" "}
-            {user.role.replaceAll("_", " ")}
-          </span>
+          <div className="avatar" aria-hidden="true">
+            {initialsFromEmail(user.email)}
+          </div>
+
+          <div className="user-meta">
+            <strong>{user.email}</strong>
+            <span className="role-pill">
+              {user.role.replaceAll("_", " ")}
+            </span>
+          </div>
 
           <button
             type="button"
+            className="btn btn-secondary"
             onClick={onLogout}
           >
             Sign out
@@ -1046,6 +1072,7 @@ function Schedule({ user, onLogout }) {
           {user.role === "FRONT_DESK" ? (
             <>
               <section className="card">
+                <p className="eyebrow">Front desk</p>
                 <h2>Bulk availability</h2>
 
                 <p className="muted">
@@ -1058,7 +1085,7 @@ function Schedule({ user, onLogout }) {
                 ) : null}
 
                 {bulkMessage ? (
-                  <p>{bulkMessage}</p>
+                  <p className="success">{bulkMessage}</p>
                 ) : null}
 
                 <form
@@ -1231,6 +1258,7 @@ function Schedule({ user, onLogout }) {
                   <div className="search-actions">
                     <button
                       type="submit"
+                      className="btn btn-primary"
                       disabled={bulkLoading}
                     >
                       {bulkLoading
@@ -1242,6 +1270,7 @@ function Schedule({ user, onLogout }) {
               </section>
 
               <section className="card">
+                <p className="eyebrow">Front desk</p>
                 <h2>Export daily schedule</h2>
 
                 <p className="muted">
@@ -1256,7 +1285,7 @@ function Schedule({ user, onLogout }) {
                 ) : null}
 
                 {exportMessage ? (
-                  <p>{exportMessage}</p>
+                  <p className="success">{exportMessage}</p>
                 ) : null}
 
                 <div className="inline-form">
@@ -1272,6 +1301,7 @@ function Schedule({ user, onLogout }) {
 
                   <button
                     type="button"
+                    className="btn btn-primary"
                     onClick={handleExport}
                     disabled={exportLoading}
                   >
@@ -1289,11 +1319,16 @@ function Schedule({ user, onLogout }) {
           ====================================================== */}
 
           <section className="card">
-            <p className="muted">
-              Providers see every appointment they schedule
-              or join as support. Front desk sees the full
-              clinic list.
-            </p>
+            <div className="section-intro">
+              <div>
+                <p className="eyebrow">Schedule</p>
+                <h2>Appointments</h2>
+                <p className="muted">
+                  Providers see visits they schedule or join as support.
+                  Front desk sees the full clinic list.
+                </p>
+              </div>
+            </div>
 
             <form
               className="search-panel"
@@ -1453,7 +1488,7 @@ function Schedule({ user, onLogout }) {
               </div>
 
               <div className="search-actions">
-                <button type="submit">
+                <button type="submit" className="btn btn-primary">
                   Search
                 </button>
 
@@ -1481,14 +1516,15 @@ function Schedule({ user, onLogout }) {
             </div>
 
             {loading ? (
-              <p>Loading schedule…</p>
+              <p className="muted">Loading schedule…</p>
             ) : appointments.length === 0 ? (
-              <p>
+              <p className="muted">
                 No appointments match the current
                 filters.
               </p>
             ) : (
-              <table>
+              <div className="table-wrap">
+              <table className="table-interactive">
                 <thead>
                   <tr>
                     <th>When</th>
@@ -1546,21 +1582,20 @@ function Schedule({ user, onLogout }) {
                       </td>
 
                       <td>
-                        {appointment.status.replaceAll(
-                          "_",
-                          " "
-                        )}
+                        <StatusBadge status={appointment.status} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
 
             {!loading && totalPages > 1 ? (
               <div className="pagination">
                 <button
                   type="button"
+                  className="btn btn-secondary"
                   disabled={page <= 1}
                   onClick={() =>
                     handlePageChange(page - 1)
@@ -1575,6 +1610,7 @@ function Schedule({ user, onLogout }) {
 
                 <button
                   type="button"
+                  className="btn btn-secondary"
                   disabled={page >= totalPages}
                   onClick={() =>
                     handlePageChange(page + 1)
