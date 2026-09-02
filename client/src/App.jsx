@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  apiUrl,
   clearSession,
   getUser,
   setSession,
@@ -943,9 +944,11 @@ function Schedule({ user, onLogout }) {
       const token = localStorage.getItem("clinic.token");
 
       const response = await fetch(
-        `/api/appointments/export?date=${encodeURIComponent(
-          exportDate
-        )}`,
+        apiUrl(
+          `/api/appointments/export?date=${encodeURIComponent(
+            exportDate
+          )}`
+        ),
         {
           headers: {
             Authorization: `Bearer ${token}`,

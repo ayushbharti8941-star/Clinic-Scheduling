@@ -1,6 +1,15 @@
 const TOKEN_KEY = "clinic.token";
 const USER_KEY = "clinic.user";
 
+// In production, set VITE_API_URL to the Render backend origin
+// (no trailing slash), e.g. https://clinic-scheduling.onrender.com
+// Locally, leave it unset so Vite's /api proxy is used.
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+
+export function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -31,7 +40,7 @@ export async function api(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers,
   });
