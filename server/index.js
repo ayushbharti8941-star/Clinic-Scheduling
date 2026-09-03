@@ -6,6 +6,7 @@ const notesRouter = require("./routes/notes");
 const providersRouter = require("./routes/providers");
 const dashboardRouter = require("./routes/dashboard");
 const alertsRoutes = require("./routes/alerts");
+const patientsRouter = require("./routes/patients");
 
 const authRouter = require("./routes/auth");
 
@@ -23,6 +24,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/appointments", appointmentsRouter);
 app.use("/api/providers", providersRouter);
+app.use("/api/patients", patientsRouter);
 app.use("/api", notesRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/alerts", alertsRoutes);

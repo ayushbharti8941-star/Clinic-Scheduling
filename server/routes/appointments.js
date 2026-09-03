@@ -24,10 +24,9 @@ const router = express.Router();
 router.post(
   "/",
   authenticateToken,
-  requireRole("PROVIDER"),
   async (req, res) => {
     try {
-      const { startTime, duration } = req.body;
+      const { startTime, duration, providerId } = req.body;
 
       if (!startTime || duration === undefined) {
         return res.status(400).json({
@@ -41,24 +40,87 @@ router.post(
         });
       }
 
-      const provider = await prisma.provider.findUnique({
+      let targetProviderId;
+      if (req.user.role === "FRONT_DESK") {
+        if (!providerId) {
+          return res.status(400).json({
+            message: "providerId is required for front-desk staff",
+          });
+        }
+        const numericProviderId = Number(providerId);
+        const providerExists = await prisma.provider.findUnique({
+          where: { id: numericProviderId },
+        });
+        if (!providerExists) {
+          return res.status(404).json({
+            message: "Provider not found",
+          });
+        }
+        targetProviderId = numericProviderId;
+      } else if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!provider) {
+          return res.status(404).json({
+            message: "Provider profile not found",
+          });
+        }
+        targetProviderId = provider.id;
+      } else {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      const slotStart = new Date(startTime);
+      if (Number.isNaN(slotStart.getTime())) {
+        return res.status(400).json({
+          message: "Invalid startTime",
+        });
+      }
+      const slotEnd = new Date(slotStart.getTime() + Number(duration) * 60000);
+
+      // Check for collision with existing appointments for this provider
+      const existingAppointments = await prisma.appointment.findMany({
         where: {
-          userId: req.user.id,
+          providerId: targetProviderId,
+          archived: false,
+          status: {
+            not: "CANCELLED",
+          },
+        },
+        select: {
+          id: true,
+          startTime: true,
+          duration: true,
         },
       });
 
-      if (!provider) {
-        return res.status(404).json({
-          message: "Provider profile not found",
+      const collides = existingAppointments.some((appt) => {
+        const apptStart = new Date(appt.startTime);
+        const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000);
+        return slotStart < apptEnd && apptStart < slotEnd;
+      });
+
+      if (collides) {
+        return res.status(400).json({
+          message: "Appointment slot collides with an existing booking for this provider",
         });
       }
 
       const appointment = await prisma.appointment.create({
         data: {
-          providerId: provider.id,
-          startTime: new Date(startTime),
+          providerId: targetProviderId,
+          startTime: slotStart,
           duration: Number(duration),
           status: "AVAILABLE",
+        },
+        include: {
+          provider: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       });
 
@@ -864,7 +926,7 @@ router.get(
         });
       }
 
-      const history =
+      const rawHistory =
         await prisma.appointmentHistory.findMany({
           where: {
             appointmentId,
@@ -882,20 +944,51 @@ router.get(
                 role: true,
               },
             },
+          },
+        });
 
-            provider: {
+      const providerIds = [
+        ...new Set(
+          rawHistory
+            .map((h) => h.providerId)
+            .filter(Boolean)
+        ),
+      ];
+
+      const providers =
+        providerIds.length > 0
+          ? await prisma.provider.findMany({
+              where: {
+                id: { in: providerIds },
+              },
               select: {
                 id: true,
                 name: true,
               },
-            },
+            })
+          : [];
 
-            visitNote: {
+      const providerMap = new Map(
+        providers.map((p) => [p.id, p])
+      );
+
+      const noteIds = [
+        ...new Set(
+          rawHistory
+            .map((h) => h.visitNoteId)
+            .filter(Boolean)
+        ),
+      ];
+
+      const notes =
+        noteIds.length > 0
+          ? await prisma.visitNote.findMany({
+              where: {
+                id: { in: noteIds },
+              },
               select: {
                 id: true,
                 content: true,
-                createdAt: true,
-
                 provider: {
                   select: {
                     id: true,
@@ -903,9 +996,22 @@ router.get(
                   },
                 },
               },
-            },
-          },
-        });
+            })
+          : [];
+
+      const noteMap = new Map(
+        notes.map((n) => [n.id, n])
+      );
+
+      const history = rawHistory.map((h) => ({
+        ...h,
+        provider: h.providerId
+          ? providerMap.get(h.providerId) || null
+          : null,
+        visitNote: h.visitNoteId
+          ? noteMap.get(h.visitNoteId) || null
+          : null,
+      }));
 
       return res.json({
         appointmentId,
@@ -929,7 +1035,6 @@ router.get(
 router.put(
   "/:id",
   authenticateToken,
-  requireRole("PROVIDER"),
   async (req, res) => {
     try {
       const appointmentId = Number(
@@ -964,27 +1069,31 @@ router.put(
         });
       }
 
-      const provider =
-        await prisma.provider.findUnique({
+      let appointment;
+      if (req.user.role === "FRONT_DESK") {
+        appointment = await prisma.appointment.findUnique({
           where: {
-            userId: req.user.id,
+            id: appointmentId,
           },
         });
-
-      if (!provider) {
-        return res.status(404).json({
-          message:
-            "Provider profile not found",
-        });
-      }
-
-      const appointment =
-        await prisma.appointment.findFirst({
+      } else if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!provider) {
+          return res.status(404).json({
+            message: "Provider profile not found",
+          });
+        }
+        appointment = await prisma.appointment.findFirst({
           where: {
             id: appointmentId,
             providerId: provider.id,
           },
         });
+      } else {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
 
       if (!appointment) {
         return res.status(404).json({
@@ -1052,7 +1161,7 @@ router.post(
         req.params.id
       );
 
-      const { patientId } = req.body;
+      const { patientId, name, patientName, email, phone } = req.body;
 
       if (Number.isNaN(appointmentId)) {
         return res.status(400).json({
@@ -1061,10 +1170,38 @@ router.post(
         });
       }
 
-      if (!patientId) {
+      let patient;
+      if (patientId) {
+        patient = await prisma.patient.findUnique({
+          where: {
+            id: Number(patientId),
+          },
+        });
+
+        if (!patient) {
+          return res.status(404).json({
+            message:
+              "Patient not found",
+          });
+        }
+      } else if (name || patientName) {
+        const pName = (name || patientName).trim();
+        if (!pName) {
+          return res.status(400).json({
+            message: "Patient name is required",
+          });
+        }
+        patient = await prisma.patient.create({
+          data: {
+            name: pName,
+            email: email?.trim() || null,
+            phone: phone?.trim() || null,
+          },
+        });
+      } else {
         return res.status(400).json({
           message:
-            "patientId is required",
+            "patientId or patient name is required",
         });
       }
 
@@ -1092,20 +1229,6 @@ router.post(
         });
       }
 
-      const patient =
-        await prisma.patient.findUnique({
-          where: {
-            id: Number(patientId),
-          },
-        });
-
-      if (!patient) {
-        return res.status(404).json({
-          message:
-            "Patient not found",
-        });
-      }
-
       const result =
         await prisma.$transaction(async (tx) => {
           // Change appointment to REQUESTED
@@ -1116,7 +1239,7 @@ router.post(
               },
 
               data: {
-                patientId: Number(patientId),
+                patientId: patient.id,
                 status: "REQUESTED",
               },
             });
@@ -1167,7 +1290,6 @@ router.post(
 router.patch(
   "/:id/archive",
   authenticateToken,
-  requireRole("PROVIDER"),
   async (req, res) => {
     try {
       const appointmentId = Number(
@@ -1181,27 +1303,29 @@ router.patch(
         });
       }
 
-      const provider =
-        await prisma.provider.findUnique({
-          where: {
-            userId: req.user.id,
-          },
+      let appointment;
+      if (req.user.role === "FRONT_DESK") {
+        appointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
         });
-
-      if (!provider) {
-        return res.status(404).json({
-          message:
-            "Provider profile not found",
-        });
-      }
-
-      const appointment =
-        await prisma.appointment.findFirst({
+      } else if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!provider) {
+          return res.status(404).json({
+            message: "Provider profile not found",
+          });
+        }
+        appointment = await prisma.appointment.findFirst({
           where: {
             id: appointmentId,
             providerId: provider.id,
           },
         });
+      } else {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
 
       if (!appointment) {
         return res.status(404).json({
@@ -1253,7 +1377,6 @@ router.patch(
 router.patch(
   "/:id/restore",
   authenticateToken,
-  requireRole("PROVIDER"),
   async (req, res) => {
     try {
       const appointmentId = Number(
@@ -1267,27 +1390,29 @@ router.patch(
         });
       }
 
-      const provider =
-        await prisma.provider.findUnique({
-          where: {
-            userId: req.user.id,
-          },
+      let appointment;
+      if (req.user.role === "FRONT_DESK") {
+        appointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
         });
-
-      if (!provider) {
-        return res.status(404).json({
-          message:
-            "Provider profile not found",
-        });
-      }
-
-      const appointment =
-        await prisma.appointment.findFirst({
+      } else if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!provider) {
+          return res.status(404).json({
+            message: "Provider profile not found",
+          });
+        }
+        appointment = await prisma.appointment.findFirst({
           where: {
             id: appointmentId,
             providerId: provider.id,
           },
         });
+      } else {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
 
       if (!appointment) {
         return res.status(404).json({
@@ -1340,7 +1465,6 @@ router.patch(
 router.patch(
   "/:id/confirm",
   authenticateToken,
-  requireRole("PROVIDER"),
   async (req, res) => {
     try {
       const appointmentId = Number(
@@ -1354,27 +1478,32 @@ router.patch(
         });
       }
 
-      const provider =
-        await prisma.provider.findUnique({
-          where: {
-            userId: req.user.id,
-          },
+      let appointment;
+      if (req.user.role === "FRONT_DESK") {
+        appointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
         });
-
-      if (!provider) {
-        return res.status(404).json({
-          message:
-            "Provider profile not found",
-        });
-      }
-
-      const appointment =
-        await prisma.appointment.findFirst({
+      } else if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!provider) {
+          return res.status(404).json({
+            message: "Provider profile not found",
+          });
+        }
+        appointment = await prisma.appointment.findFirst({
           where: {
             id: appointmentId,
-            providerId: provider.id,
+            OR: [
+              { providerId: provider.id },
+              { supportingProviders: { some: { providerId: provider.id } } },
+            ],
           },
         });
+      } else {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
 
       if (!appointment) {
         return res.status(404).json({
@@ -1631,7 +1760,6 @@ router.patch(
 router.patch(
   "/:id/no-show",
   authenticateToken,
-  requireRole("FRONT_DESK"),
   async (req, res) => {
     try {
       const appointmentId = Number(
@@ -1650,12 +1778,29 @@ router.patch(
           where: {
             id: appointmentId,
           },
+          include: {
+            supportingProviders: true,
+          },
         });
 
       if (!appointment) {
         return res.status(404).json({
           message:
             "Appointment not found",
+        });
+      }
+
+      if (req.user.role === "PROVIDER") {
+        const provider = await getProviderForUser(req.user.id);
+        if (!canViewAppointment(req.user, provider, appointment)) {
+          return res.status(403).json({
+            message:
+              "You can only mark no-show for appointments on your schedule",
+          });
+        }
+      } else if (req.user.role !== "FRONT_DESK") {
+        return res.status(403).json({
+          message: "Access denied",
         });
       }
 
@@ -1851,6 +1996,162 @@ router.patch(
       return res.status(500).json({
         message:
           "Internal server error",
+      });
+    }
+  }
+);
+
+
+// ============================================================
+// REASSIGN APPOINTMENT BETWEEN PROVIDERS
+// Goal 1: Front-desk can reassign appointments between providers.
+// Providers cannot reassign an appointment away from themselves.
+// ============================================================
+
+router.patch(
+  "/:id/reassign",
+  authenticateToken,
+  requireRole("FRONT_DESK"),
+  async (req, res) => {
+    try {
+      const appointmentId = Number(req.params.id);
+      const { providerId } = req.body;
+
+      if (Number.isNaN(appointmentId)) {
+        return res.status(400).json({
+          message: "Invalid appointment ID",
+        });
+      }
+
+      if (!providerId) {
+        return res.status(400).json({
+          message: "providerId is required",
+        });
+      }
+
+      const targetProviderId = Number(providerId);
+      if (Number.isNaN(targetProviderId)) {
+        return res.status(400).json({
+          message: "Invalid providerId",
+        });
+      }
+
+      const targetProvider = await prisma.provider.findUnique({
+        where: { id: targetProviderId },
+      });
+
+      if (!targetProvider) {
+        return res.status(404).json({
+          message: "Target provider not found",
+        });
+      }
+
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: { supportingProviders: true },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({
+          message: "Appointment not found",
+        });
+      }
+
+      if (appointment.status === "CANCELLED" || appointment.status === "COMPLETED") {
+        return res.status(400).json({
+          message: "Cannot reassign a cancelled or completed appointment",
+        });
+      }
+
+      if (appointment.providerId === targetProviderId) {
+        return res.status(400).json({
+          message: "Appointment is already assigned to this provider",
+        });
+      }
+
+      // Check collision for target provider at this time
+      const apptStart = new Date(appointment.startTime);
+      const apptEnd = new Date(apptStart.getTime() + appointment.duration * 60000);
+
+      const existingAppointments = await prisma.appointment.findMany({
+        where: {
+          providerId: targetProviderId,
+          archived: false,
+          id: { not: appointment.id },
+          status: { not: "CANCELLED" },
+        },
+        select: {
+          id: true,
+          startTime: true,
+          duration: true,
+        },
+      });
+
+      const collides = existingAppointments.some((appt) => {
+        const start = new Date(appt.startTime);
+        const end = new Date(start.getTime() + appt.duration * 60000);
+        return apptStart < end && start < apptEnd;
+      });
+
+      if (collides) {
+        return res.status(400).json({
+          message: "The target provider has a schedule conflict at this time",
+        });
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        // If target provider is currently a supporting provider on this appointment, remove that support
+        const existingSupport = appointment.supportingProviders.find(
+          (support) => support.providerId === targetProviderId
+        );
+        if (existingSupport) {
+          await tx.appointmentSupport.delete({
+            where: { id: existingSupport.id },
+          });
+        }
+
+        const updated = await tx.appointment.update({
+          where: { id: appointment.id },
+          data: {
+            providerId: targetProviderId,
+          },
+          include: {
+            provider: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            patient: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            supportingProviders: {
+              include: {
+                provider: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        return updated;
+      });
+
+      return res.json({
+        message: "Appointment reassigned successfully",
+        appointment: result,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+        message: "Internal server error",
       });
     }
   }

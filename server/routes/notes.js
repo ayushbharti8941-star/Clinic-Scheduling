@@ -51,13 +51,22 @@ router.post(
       const appointment = await prisma.appointment.findFirst({
         where: {
           id: appointmentId,
-          providerId: provider.id,
+          OR: [
+            { providerId: provider.id },
+            {
+              supportingProviders: {
+                some: {
+                  providerId: provider.id,
+                },
+              },
+            },
+          ],
         },
       });
 
       if (!appointment) {
         return res.status(404).json({
-          message: "Appointment not found",
+          message: "Appointment not found on your schedule",
         });
       }
 
