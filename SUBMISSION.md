@@ -3,7 +3,7 @@
 ## Links
 
 - **GitHub repository:** https://github.com/ayushbharti8941-star/Clinic-Scheduling
-- **Live application:** https://clinic-scheduling-sigma.vercel.app
+- **Live application:** https://clinic-scheduling-q7zkrlrzh-ithappens.vercel.app/
 
 *(Note: If your live URL differs, replace the link above with your active Vercel deployment URL).*
 
