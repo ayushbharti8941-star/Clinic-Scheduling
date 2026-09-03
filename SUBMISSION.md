@@ -5,8 +5,6 @@
 - **GitHub repository:** https://github.com/ayushbharti8941-star/Clinic-Scheduling
 - **Live application:** https://clinic-scheduling-q7zkrlrzh-ithappens.vercel.app/
 
-*(Note: If your live URL differs, replace the link above with your active Vercel deployment URL).*
-
 ## Notes for the reviewer
 
 - **Cold Starts on Free Tier**: The backend is deployed on Render's free tier web service. When idle, the container enters sleep mode. Please allow **45–60 seconds** on the very first login or request for the container to wake up. Subsequent requests will be fast and responsive.
